@@ -113,7 +113,7 @@ class TorchClassMixin(TorchModel):
         Fits a torch classifier Model object using ADAM optimizer and cross
         categorical entropy loss.
 
-        GPU OPTIMIZED IMPLEMENTATION! DOES NOT SUPPORT WEIGHTING!
+        GPU OPTIMIZED IMPLEMENTATION!
 
         Parameters
         ----------
@@ -130,36 +130,60 @@ class TorchClassMixin(TorchModel):
         lr : float, optional
             Learning rate for the Model, by default 0.01
         """
-        assert sample_weight is None, "Incompatibility Problem! weights != None"
 
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
 
         criterion = F.binary_cross_entropy if self.num_classes == 2 else F.cross_entropy
         dataset = CatDataset(x_train, y_train, sample_weight)
-
-        # Move dataset to device all at once:
-        train_loader = DataLoader(dataset, batch_size=1000, shuffle=True)
-        complete_ds = next(iter(train_loader))
-        x_train, y_train, *sample_weight = complete_ds
-        x_train, y_train = x_train.to(device=self.device), y_train.to(device=self.device)
-
-        # Dataset is now on GPU:
-        dataset = CatDataset(x_train, y_train)
-
-        train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
         self.train()
-        for _ in range(int(epochs)):
-            for x_batch, y_batch in train_loader:
-                optimizer.zero_grad()
-                outputs = self.__call__(x_batch)
 
-                loss = criterion(outputs, y_batch, reduction="mean")
+        if sample_weight is None:   # GPU optimized implementation
+            # Move dataset to device all at once:
+            train_loader = DataLoader(dataset, batch_size=1000, shuffle=True)
+            complete_ds = next(iter(train_loader))
+            x_train, y_train, *sample_weight = complete_ds
+            x_train, y_train = x_train.to(device=self.device), y_train.to(device=self.device)
 
-                loss.backward()  # Compute gradient
-                optimizer.step()  # Updates weights
+            # Dataset is now on GPU:
+            dataset = CatDataset(x_train, y_train)
+
+            train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+            for _ in range(int(epochs)):
+                for x_batch, y_batch in train_loader:
+                    optimizer.zero_grad()
+                    outputs = self.__call__(x_batch)
+
+                    loss = criterion(outputs, y_batch, reduction="mean")
+
+                    loss.backward()  # Compute gradient
+                    optimizer.step()  # Updates weights
+
+        else:
+            for _ in range(int(epochs)):
+                # *weights helps check if we passed weights into the Dataloader
+                for x_batch, y_batch, *weights in DataLoader(
+                        dataset, batch_size, shuffle=True, pin_memory=True
+                ):
+                    # Moves data to correct device
+                    x_batch = x_batch.to(device=self.device)
+                    y_batch = y_batch.to(device=self.device)
+
+                    optimizer.zero_grad()
+                    outputs = self.__call__(x_batch)
+
+                    if sample_weight is not None:
+                        # F.cross_entropy doesn't support sample_weights
+                        loss = criterion(outputs, y_batch, reduction="none")
+                        loss = (loss * weights[0].to(device=self.device)).mean()
+                    else:
+                        loss = criterion(outputs, y_batch, reduction="mean")
+
+                    loss.backward()  # Compute gradient
+                    optimizer.step()  # Updates weights
 
         return self
+
 
 
 class TorchRegressMixin(TorchModel):
@@ -195,36 +219,63 @@ class TorchRegressMixin(TorchModel):
         lr : float, optional
             Learning rate for the Model, by default 0.01
         """
-        assert sample_weight is None, "Incompatibility Problem! weights != None"
-
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
 
         criterion = F.mse_loss
         dataset = CatDataset(x_train, y_train, sample_weight)
 
-        # Move dataset to device all at once:
-        train_loader = DataLoader(dataset, batch_size=1000, shuffle=True)
-        complete_ds = next(iter(train_loader))
-        x_train, y_train, *sample_weight = complete_ds
-        x_train, y_train = x_train.to(device=self.device), y_train.to(device=self.device)
-
-        # Dataset is now on GPU:
-        dataset = CatDataset(x_train, y_train)
-
-        train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
         self.train()
-        for _ in range(int(epochs)):
-            for x_batch, y_batch in train_loader:
-                optimizer.zero_grad()
-                y_hat = self.__call__(x_batch)
 
-                loss = criterion(y_hat, y_batch, reduction="mean")
+        if sample_weight is None:   # GPU optimized implementation
+            # Move dataset to device all at once:
+            train_loader = DataLoader(dataset, batch_size=1000, shuffle=True)
+            complete_ds = next(iter(train_loader))
+            x_train, y_train, *sample_weight = complete_ds
+            x_train, y_train = x_train.to(device=self.device), y_train.to(device=self.device)
 
-                loss.backward()  # Compute gradient
-                optimizer.step()  # Updates weights
+            # Dataset is now on GPU:
+            dataset = CatDataset(x_train, y_train)
+
+            train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+            for _ in range(int(epochs)):
+                for x_batch, y_batch in train_loader:
+                    optimizer.zero_grad()
+                    y_hat = self.__call__(x_batch)
+
+                    loss = criterion(y_hat, y_batch, reduction="mean")
+
+                    loss.backward()  # Compute gradient
+                    optimizer.step()  # Updates weights
+
+        else:
+            for _ in range(int(epochs)):
+                # *weights helps check if we passed weights into the Dataloader
+                for x_batch, y_batch, *weights in DataLoader(
+                        dataset,
+                        batch_size,
+                        shuffle=True,
+                        pin_memory=True,
+                ):
+                    # Moves data to correct device
+                    x_batch = x_batch.to(device=self.device)
+                    y_batch = y_batch.to(device=self.device)
+
+                    optimizer.zero_grad()
+                    y_hat = self.__call__(x_batch)
+
+                    if sample_weight is not None:
+                        # F.cross_entropy doesn't support sample_weight
+                        loss = criterion(y_hat, y_batch, reduction="none")
+                        loss = (loss * weights[0].to(device=self.device)).mean()
+                    else:
+                        loss = criterion(y_hat, y_batch, reduction="mean")
+
+                    loss.backward()  # Compute gradient
+                    optimizer.step()  # Updates weights
 
         return self
+
 
 
 class TorchPredictMixin(TorchModel):
