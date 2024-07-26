@@ -19,6 +19,8 @@ class Model(ABC):
     """Abstract class of Models. Provides a template for models."""
 
     Models: ClassVar[dict[str, Self]] = {}
+    x_train = None
+    y_train = None
 
     def __init_subclass__(cls, *args, **kwargs):
         """Registers Model types, used as part of the CLI."""
@@ -138,15 +140,16 @@ class TorchClassMixin(TorchModel):
         self.train()
 
         if sample_weight is None:   # GPU optimized implementation
-            # Move dataset to device all at once:
-            train_loader = DataLoader(dataset, batch_size=1000, shuffle=True)
-            complete_ds = next(iter(train_loader))
-            x_train, y_train, *sample_weight = complete_ds
-            x_train, y_train = x_train.to(device=self.device), y_train.to(device=self.device)
+            if self.x_train is None or self.y_train is None:
+                # Move dataset to device all at once:
+                train_loader = DataLoader(dataset, batch_size=1000, shuffle=True)
+                complete_ds = next(iter(train_loader))
+                self.x_train, self.y_train, *sample_weight = complete_ds
+                self.x_train = self.x_train.to(device=self.device)
+                self.y_train = self.y_train.to(device=self.device)
 
-            # Dataset is now on GPU:
-            dataset = CatDataset(x_train, y_train)
-
+                # Dataset is now on GPU:
+            dataset = CatDataset(self.x_train, self.y_train)
             train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
             for _ in range(int(epochs)):
@@ -227,15 +230,16 @@ class TorchRegressMixin(TorchModel):
         self.train()
 
         if sample_weight is None:   # GPU optimized implementation
-            # Move dataset to device all at once:
-            train_loader = DataLoader(dataset, batch_size=1000, shuffle=True)
-            complete_ds = next(iter(train_loader))
-            x_train, y_train, *sample_weight = complete_ds
-            x_train, y_train = x_train.to(device=self.device), y_train.to(device=self.device)
+            if self.x_train is None or self.y_train is None:
+                # Move dataset to device all at once:
+                train_loader = DataLoader(dataset, batch_size=1000, shuffle=True)
+                complete_ds = next(iter(train_loader))
+                self.x_train, self.y_train, *sample_weight = complete_ds
+                self.x_train = self.x_train.to(device=self.device)
+                self.y_train = self.y_train.to(device=self.device)
 
             # Dataset is now on GPU:
-            dataset = CatDataset(x_train, y_train)
-
+            dataset = CatDataset(self.x_train, self.y_train)
             train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
             for _ in range(int(epochs)):
