@@ -172,7 +172,11 @@ def ModelFactory(  # noqa: C901 model factory tries to match name with long if-e
         ).to(device)
     elif model_name == "sklogreg":
         return ClassifierSkLearnWrapper(SkLogReg, label_dim[0], *args, **kwargs)
-    elif model_name == "skmlp":
+    elif model_name == "skmlp" or "skmlpclassifier":
+        return ClassifierUnweightedSkLearnWrapper(
+            MLPClassifier, label_dim[0], *args, **kwargs
+        )
+    elif model_name == "skmlpregressor":
         return ClassifierUnweightedSkLearnWrapper(
             MLPClassifier, label_dim[0], *args, **kwargs
         )
